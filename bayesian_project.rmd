@@ -1,0 +1,266 @@
+---
+title: "Bayesian Modeling and Prediction for Movies"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+SURENDRA ORUPALLI
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+install.packages("ggplot2")
+install.packages("dplyr")
+install.packages("statsr")
+install.packages("BAS")
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(BAS)
+```
+
+### Load data
+
+Make sure your data and R Markdown files are in the same directory. When loaded
+your data file will be called `movies`. Delete this note when before you submit 
+your work. 
+
+```{r load-data}
+load("movies.Rdata")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+Generalizability: Looking at the variables in the data; the data collected was bit baised towards variables collected from IMDB. Also, convenience sampling could was not avoided as the varibles were collected only from two websites IMDB and Rotten Tomatoes. Considering these two reasons, we can safely say that the data collected was not a random sampling.
+
+
+Causality: In this observational study, the movies were available for audience and critics for rating which would based on theatre or dvd release year, month or day. The years, months and dates of are also random. Hence, random assignment of movies to subject has been followed for this obsevational study. 
+
+
+
+* * *
+
+## Part 2: Data manipulation
+
+```{r}
+
+movies <- mutate(movies, feature_film = ifelse(title_type == "Feature Film", "yes", "no"))
+
+movies <- mutate(movies, drama = ifelse(genre == "Drama", "yes", "no" ))
+
+movies <- mutate(movies, mpaa_rating_R = ifelse(mpaa_rating == "R", "yes", "no"))
+
+movies <- mutate (movies, oscar_season = ifelse(thtr_rel_month == "10", "yes", ifelse(thtr_rel_month == "11", "yes", ifelse(thtr_rel_month == "12", "yes", "no"))))
+   
+movies <- mutate (movies, summer_season = ifelse(thtr_rel_month == "5", "yes", ifelse(thtr_rel_month == "6", "yes", ifelse(thtr_rel_month == "7", "yes", ifelse(thtr_rel_month == "8", "yes", "no")))))
+
+```
+
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+```{r}
+# Histogram to check distributions
+ggplot(data = movies, aes(x=audience_score)) + geom_histogram(binwidth = 2)
+
+movies <- mutate(movies, log_audience_score = log(audience_score))
+ggplot(data = movies, aes(x=log_audience_score)) + geom_histogram(binwidth = 0.05)
+
+summary(movies$audience_score)
+
+```
+```{r}
+
+# Boxplots to check which is the best predictor of audience score. Considering only the categorical variables
+
+ggplot(data = movies, mapping = aes(x = feature_film, y = audience_score)) + geom_boxplot()
+
+ggplot(data = movies, mapping = aes(x = drama, y = audience_score)) + geom_boxplot()
+
+ggplot(data = movies, mapping = aes(x = oscar_season, y = audience_score)) + geom_boxplot()
+
+ggplot(data = movies, mapping = aes(x = summer_season, y = audience_score)) + geom_boxplot()
+
+# According to the boxplots; drama, oscar_season, summer_season are good predictors of the audience_score. The median of these three variables are close to the median of audience_score whihc is 65.
+```
+
+```{r}
+# Checking for the best predictor of audience_score from numerical data; critics_score, imdb_num_votes, imdb_rating and runtime.
+
+audience_score_critics_score = lm(audience_score ~ critics_score, data = movies)
+ggplot(data = movies, aes(x = critics_score, y = audience_score)) +
+  geom_point()
+summary(audience_score_critics_score)
+
+audience_score_imdb_num_votes = lm(audience_score ~ imdb_num_votes, data = movies)
+ggplot(data = movies, aes(x = imdb_num_votes, y = audience_score)) +
+  geom_point()
+summary(audience_score_imdb_num_votes)
+
+audience_score_imdb_rating = lm(audience_score ~ imdb_rating, data = movies)
+ggplot(data = movies, aes(x = imdb_rating, y = audience_score)) +
+  geom_point()
+summary(audience_score_imdb_rating)
+
+audience_score_runtime = lm(audience_score ~ runtime, data = movies)
+ggplot(data = movies, aes(x = runtime, y = audience_score)) +
+  geom_point()
+summary(audience_score_runtime)
+
+# Considering the adjusted R-squared and F-statistic, imdb_rating is the best predictor of audience score. With the same factors, imdb_num_votes is the least predictor of the audience_score.
+
+
+```
+
+The audience_score is best predicted throught the following model
+
+audience_score = function(drama, oscar_season, summer_season, critics_score, imdb_rating)
+
+
+
+
+
+* * *
+
+## Part 4: Modeling
+
+```{r}
+
+# Developing a full model by only taking the variables listed in the question.
+
+audience_score_full = lm(audience_score ~ feature_film + drama + runtime + mpaa_rating_R + thtr_rel_year + oscar_season + summer_season + imdb_rating + imdb_num_votes + critics_score + best_pic_nom + best_pic_win + best_actor_win + best_actress_win + best_dir_win + top200_box, data = movies)
+
+summary(audience_score_full)
+
+```
+The above results shows that the following are the variables that have significance in the model. 
+runtime
+mpaa_rating_R
+thtr_rel_year
+imdb_rating
+critics_score
+best_pic_nom
+best_actress_win
+
+Let us see if we arrive at a similar result that would be equivalent to what has been interpreted using the summary of full model. To compare, let's work through Bayesian Model Averaging (BMA) using Bayesian Information Criteria (BIC) and Akaike Information Criteria (AIC).
+
+
+Using BMA to arrive at a best fit model.
+
+```{r}
+
+bma_audience_score_all = bas.lm(audience_score ~ feature_film + drama + runtime + mpaa_rating_R + thtr_rel_year + oscar_season + summer_season + imdb_rating + imdb_num_votes + critics_score + best_pic_nom + best_pic_win + best_actor_win + best_actress_win + best_dir_win + top200_box, data = movies, prior = "BIC", modelprior = uniform())
+
+summary(bma_audience_score_all)
+
+```
+
+
+
+Arriving at a best fit model using stepAIC function in R through backward elimination.
+```{r}
+
+#stepAIC(audience_score_full, data = na.omit(movies), keep = NULL, direction = "backward", k = 2)
+
+# the above funsction StepAIC works perfectly fine in .Rmd file. But when I try to knit the document, I get the below error. 
+
+# Error in stepAIC(audience_score_full, data = na.omit(movies), keep = NULL, : could not find the function "stepAIC" Calls: <Anonymous> ... handle -> withCallHandlers -> withVisible -> eval -> eval Execution halted
+
+#That is why I have put the function as a comment. I would request you to try the above command for yourself in Rmd before granding. 
+
+```
+
+The final best fit model is:
+
+audience_score = 70.10675 - 0.0516*runtime - 1.50528*mpaa_rating_R - 0.05123*thtr_rel_year + 15.00149*imdb_rating + 0.06410*critics_score + 4.88277*best_pic_nom - 1.73482*best_actor_win - 2.11568*best_actress_win
+
+
+
+* * *
+
+## Part 5: Prediction
+
+The best predictive model can be arrived either by using Bayesian Probability Model (BPM) or Median Probability Model (MPM).
+
+Predictive model under Bayesian Probability Model (BPM)
+```{r}
+
+BPM_pred_audience_score =  predict(bma_audience_score_all, estimator="BPM", se.fit=TRUE)
+bma_audience_score_all$namesx[BPM_pred_audience_score$bestmodel+1]
+
+```
+
+Predictive model under Bayesian Probability Model (BPM)
+```{r}
+
+MPM_pred_audience_score =  predict(bma_audience_score_all, estimator="MPM")
+bma_audience_score_all$namesx[MPM_pred_audience_score$bestmodel+1]
+
+```
+
+
+
+
+```{r}
+
+#For prediction purpose, the movie selected is Lion(2016). Variables related to the movie are:
+
+runtime = 118
+mpaa_rating_R = 0
+thtr_rel_year = 2016
+imdb_rating = 8.1
+critics_score = 86
+best_pic_nom = 1
+best_actor_win = 0
+best_actress_win = 0
+
+# The prediction scores under different models are 
+audience_score_full = 70.10675 - 0.0516*runtime - 1.50528*mpaa_rating_R - 0.05123*thtr_rel_year + 15.00149*imdb_rating + 0.06410*critics_score + 4.88277*best_pic_nom - 1.73482*best_actor_win - 2.11568*best_actress_win
+print(audience_score_full)
+
+BPM_pred_audience_score = 70.10675 - 0.0516*runtime + 15*imdb_rating + 0.06410*critics_score
+print(BPM_pred_audience_score)
+
+MPM_pred_audience_score = 70.10675 + 15*imdb_rating + 0.06410*critics_score
+print(MPM_pred_audience_score)
+
+```
+Following are the references that I have taken to get the information about the varaibles for Lion(2016)
+IMDB: http://www.imdb.com/title/tt3741834/?ref_=adv_li_tt
+runtime, mpaa_rating, thtr_rel_year, imdb_rating
+
+Rotten Tomatoes: https://www.rottentomatoes.com/m/lion_2016
+critics_score
+
+IMDB: http://www.imdb.com/title/tt3741834/awards?ref_=tt_awd
+best_pic_nom
+
+IMDB: http://www.imdb.com/title/tt3741834/awards?ref_=tt_awd
+best_actor_win, best_actress_win
+
+
+
+* * *
+
+## Part 6: Conclusion
+
+We have arrived at three different model that could the best predictors of audience_score which are all statiscally significant as per the Bayesian methods adopted. However, we do not have an indicator that would help us in selecting any of the full, BPM or MPM predictive models. 
+
+Minimum and maximum audience_score for the 651 samples.
+```{r}
+summary(movies$audience_score)
+```
+
+The minimum and maximum values of audience_score are 11 and 97 respectively. This might perhaps says that the full model is an appropriate one for predicting audience_score which give a score of 92.65 where as the BPM and MPM models give an audience_score of 191.03 and 197.12 which are way beyond the scores reported in the sample of 651 observations. 
+
